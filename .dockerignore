@@ -1,0 +1,8 @@
+node_modules
+.git
+.env
+*.md
+client/src
+server/*.ts
+!dist
+!client/dist
