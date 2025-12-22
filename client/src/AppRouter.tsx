@@ -6,6 +6,7 @@ import Login from './Login';
 import Signup from './Signup';
 import Pricing from './Pricing';
 import Dashboard from './Dashboard';
+import BrandProfiles from './BrandProfiles';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,14 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/brand-profiles"
+          element={
+            <ProtectedRoute>
+              <BrandProfiles />
             </ProtectedRoute>
           }
         />

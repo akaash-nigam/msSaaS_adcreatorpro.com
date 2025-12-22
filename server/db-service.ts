@@ -28,9 +28,26 @@ export interface User {
   updated_at: Date;
 }
 
+export interface BrandProfile {
+  id: string;
+  user_id: string;
+  name: string;
+  industry?: string;
+  description?: string;
+  target_audience?: string;
+  brand_voice?: string;
+  keywords?: string[];
+  example_content?: string;
+  website_url?: string;
+  is_default: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface Ad {
   id: string;
   user_id: string;
+  brand_profile_id?: string;
   product_description: string;
   platform?: string;
   tone?: string;
@@ -40,6 +57,7 @@ export interface Ad {
   cta: string;
   hashtags: string[];
   ai_model: string;
+  variation_number: number;
   created_at: Date;
 }
 
@@ -161,6 +179,155 @@ export async function addAdsToUser(userId: string, count: number): Promise<boole
   }
 }
 
+// Brand Profile operations
+export async function createBrandProfile(
+  userId: string,
+  name: string,
+  industry?: string,
+  description?: string,
+  targetAudience?: string,
+  brandVoice?: string,
+  keywords?: string[],
+  exampleContent?: string,
+  websiteUrl?: string,
+  isDefault?: boolean
+): Promise<BrandProfile | null> {
+  const db = getPool();
+  if (!db) return null;
+
+  try {
+    // If this is set as default, unset other defaults first
+    if (isDefault) {
+      await db.query(
+        'UPDATE brand_profiles SET is_default = false WHERE user_id = $1',
+        [userId]
+      );
+    }
+
+    const result = await db.query(
+      `INSERT INTO brand_profiles (user_id, name, industry, description, target_audience, brand_voice, keywords, example_content, website_url, is_default)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [userId, name, industry, description, targetAudience, brandVoice, keywords || [], exampleContent, websiteUrl, isDefault || false]
+    );
+    return result.rows[0] as BrandProfile;
+  } catch (error: any) {
+    console.error('Error creating brand profile:', error.message);
+    return null;
+  }
+}
+
+export async function getBrandProfiles(userId: string): Promise<BrandProfile[]> {
+  const db = getPool();
+  if (!db) return [];
+
+  try {
+    const result = await db.query(
+      'SELECT * FROM brand_profiles WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC',
+      [userId]
+    );
+    return result.rows as BrandProfile[];
+  } catch (error: any) {
+    console.error('Error getting brand profiles:', error.message);
+    return [];
+  }
+}
+
+export async function getBrandProfileById(userId: string, profileId: string): Promise<BrandProfile | null> {
+  const db = getPool();
+  if (!db) return null;
+
+  try {
+    const result = await db.query(
+      'SELECT * FROM brand_profiles WHERE id = $1 AND user_id = $2',
+      [profileId, userId]
+    );
+    return result.rows[0] as BrandProfile || null;
+  } catch (error: any) {
+    console.error('Error getting brand profile:', error.message);
+    return null;
+  }
+}
+
+export async function updateBrandProfile(
+  userId: string,
+  profileId: string,
+  updates: Partial<Omit<BrandProfile, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
+): Promise<BrandProfile | null> {
+  const db = getPool();
+  if (!db) return null;
+
+  try {
+    // If setting as default, unset other defaults first
+    if (updates.is_default) {
+      await db.query(
+        'UPDATE brand_profiles SET is_default = false WHERE user_id = $1',
+        [userId]
+      );
+    }
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    let paramCount = 1;
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value !== undefined) {
+        fields.push(`${key} = $${paramCount}`);
+        values.push(value);
+        paramCount++;
+      }
+    });
+
+    if (fields.length === 0) return null;
+
+    fields.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(profileId, userId);
+
+    const result = await db.query(
+      `UPDATE brand_profiles SET ${fields.join(', ')}
+       WHERE id = $${paramCount} AND user_id = $${paramCount + 1}
+       RETURNING *`,
+      values
+    );
+    return result.rows[0] as BrandProfile || null;
+  } catch (error: any) {
+    console.error('Error updating brand profile:', error.message);
+    return null;
+  }
+}
+
+export async function deleteBrandProfile(userId: string, profileId: string): Promise<boolean> {
+  const db = getPool();
+  if (!db) return false;
+
+  try {
+    await db.query(
+      'DELETE FROM brand_profiles WHERE id = $1 AND user_id = $2',
+      [profileId, userId]
+    );
+    return true;
+  } catch (error: any) {
+    console.error('Error deleting brand profile:', error.message);
+    return false;
+  }
+}
+
+export async function getDefaultBrandProfile(userId: string): Promise<BrandProfile | null> {
+  const db = getPool();
+  if (!db) return null;
+
+  try {
+    const result = await db.query(
+      'SELECT * FROM brand_profiles WHERE user_id = $1 AND is_default = true LIMIT 1',
+      [userId]
+    );
+    return result.rows[0] as BrandProfile || null;
+  } catch (error: any) {
+    console.error('Error getting default brand profile:', error.message);
+    return null;
+  }
+}
+
 // Ad operations
 export async function saveAd(
   userId: string,
@@ -172,17 +339,19 @@ export async function saveAd(
   copy: string,
   cta: string,
   hashtags: string[],
-  aiModel: string
+  aiModel: string,
+  brandProfileId?: string,
+  variationNumber?: number
 ): Promise<Ad | null> {
   const db = getPool();
   if (!db) return null;
 
   try {
     const result = await db.query(
-      `INSERT INTO ads (user_id, product_description, platform, tone, target_audience, headline, copy, cta, hashtags, ai_model)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO ads (user_id, brand_profile_id, product_description, platform, tone, target_audience, headline, copy, cta, hashtags, ai_model, variation_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
-      [userId, productDescription, platform, tone, targetAudience, headline, copy, cta, hashtags, aiModel]
+      [userId, brandProfileId || null, productDescription, platform, tone, targetAudience, headline, copy, cta, hashtags, aiModel, variationNumber || 1]
     );
     return result.rows[0] as Ad;
   } catch (error: any) {

@@ -38,11 +38,32 @@ export async function initializeDatabase() {
     `);
     console.log('✅ Users table ready');
 
+    // Create brand_profiles table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS brand_profiles (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        industry VARCHAR(255),
+        description TEXT,
+        target_audience TEXT,
+        brand_voice VARCHAR(100),
+        keywords TEXT[],
+        example_content TEXT,
+        website_url TEXT,
+        is_default BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Brand profiles table ready');
+
     // Create ads table (history of generated ads)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ads (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        brand_profile_id UUID REFERENCES brand_profiles(id) ON DELETE SET NULL,
         product_description TEXT NOT NULL,
         platform VARCHAR(100),
         tone VARCHAR(100),
@@ -52,6 +73,7 @@ export async function initializeDatabase() {
         cta VARCHAR(255),
         hashtags TEXT[],
         ai_model VARCHAR(50),
+        variation_number INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -92,7 +114,10 @@ export async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
       CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
       CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id);
+      CREATE INDEX IF NOT EXISTS idx_brand_profiles_user_id ON brand_profiles(user_id);
+      CREATE INDEX IF NOT EXISTS idx_brand_profiles_default ON brand_profiles(user_id, is_default);
       CREATE INDEX IF NOT EXISTS idx_ads_user_id ON ads(user_id);
+      CREATE INDEX IF NOT EXISTS idx_ads_brand_profile ON ads(brand_profile_id);
       CREATE INDEX IF NOT EXISTS idx_ads_created_at ON ads(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id);
       CREATE INDEX IF NOT EXISTS idx_usage_logs_user_id ON usage_logs(user_id);

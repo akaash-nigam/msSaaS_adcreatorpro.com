@@ -98,6 +98,144 @@ app.get('/api/user/ads', authenticateUser, async (req, res) => {
   }
 });
 
+// ==================== BRAND PROFILE ROUTES ====================
+
+// Create brand profile
+app.post('/api/brand-profiles', authenticateUser, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await db.getUserByFirebaseUid(req.user.uid);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { name, industry, description, targetAudience, brandVoice, keywords, exampleContent, websiteUrl, isDefault } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Brand name is required' });
+    }
+
+    const profile = await db.createBrandProfile(
+      user.id,
+      name,
+      industry,
+      description,
+      targetAudience,
+      brandVoice,
+      keywords,
+      exampleContent,
+      websiteUrl,
+      isDefault
+    );
+
+    if (!profile) {
+      return res.status(500).json({ error: 'Failed to create brand profile' });
+    }
+
+    res.json(profile);
+  } catch (error: any) {
+    console.error('Create brand profile error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all brand profiles for user
+app.get('/api/brand-profiles', authenticateUser, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await db.getUserByFirebaseUid(req.user.uid);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const profiles = await db.getBrandProfiles(user.id);
+    res.json(profiles);
+  } catch (error: any) {
+    console.error('Get brand profiles error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get single brand profile
+app.get('/api/brand-profiles/:id', authenticateUser, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await db.getUserByFirebaseUid(req.user.uid);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const profile = await db.getBrandProfileById(user.id, req.params.id);
+    if (!profile) {
+      return res.status(404).json({ error: 'Brand profile not found' });
+    }
+
+    res.json(profile);
+  } catch (error: any) {
+    console.error('Get brand profile error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update brand profile
+app.put('/api/brand-profiles/:id', authenticateUser, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await db.getUserByFirebaseUid(req.user.uid);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const updates = req.body;
+    const profile = await db.updateBrandProfile(user.id, req.params.id, updates);
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Brand profile not found or no changes made' });
+    }
+
+    res.json(profile);
+  } catch (error: any) {
+    console.error('Update brand profile error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete brand profile
+app.delete('/api/brand-profiles/:id', authenticateUser, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await db.getUserByFirebaseUid(req.user.uid);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const success = await db.deleteBrandProfile(user.id, req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: 'Brand profile not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Delete brand profile error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== STRIPE ROUTES ====================
 
 // Create Stripe checkout session for subscription
@@ -241,10 +379,10 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 
 // ==================== AD GENERATION ROUTES ====================
 
-// Generate ad copy (with auth and usage tracking)
+// Generate ad copy (with auth, brand profiles, and multi-variation support)
 app.post('/api/generate-ad', optionalAuth, async (req, res) => {
   try {
-    const { product, platform, tone, targetAudience } = req.body;
+    const { product, platform, tone, targetAudience, brandProfileId, variationsCount = 3 } = req.body;
 
     if (!product) {
       return res.status(400).json({ error: 'Product description is required' });
@@ -252,6 +390,8 @@ app.post('/api/generate-ad', optionalAuth, async (req, res) => {
 
     // Check if user is authenticated and has credits
     let user = null;
+    let brandProfile = null;
+
     if (req.user) {
       user = await db.getUserByFirebaseUid(req.user.uid);
 
@@ -263,7 +403,28 @@ app.post('/api/generate-ad', optionalAuth, async (req, res) => {
             message: 'Please purchase more ads or upgrade your subscription'
           });
         }
+
+        // Fetch brand profile if provided
+        if (brandProfileId) {
+          brandProfile = await db.getBrandProfileById(user.id, brandProfileId);
+        }
       }
+    }
+
+    // Build brand context if brand profile exists
+    let brandContext = '';
+    if (brandProfile) {
+      brandContext = `
+BRAND CONTEXT:
+Brand Name: ${brandProfile.name}
+${brandProfile.industry ? `Industry: ${brandProfile.industry}` : ''}
+${brandProfile.description ? `Brand Description: ${brandProfile.description}` : ''}
+${brandProfile.target_audience ? `Target Audience: ${brandProfile.target_audience}` : ''}
+${brandProfile.brand_voice ? `Brand Voice: ${brandProfile.brand_voice}` : ''}
+${brandProfile.keywords && brandProfile.keywords.length > 0 ? `Key Themes: ${brandProfile.keywords.join(', ')}` : ''}
+${brandProfile.example_content ? `Style Reference: ${brandProfile.example_content}` : ''}
+
+Use this brand context to ensure consistency and authenticity in the ad copy.`;
     }
 
     // Platform-specific optimization
@@ -347,26 +508,30 @@ Format as JSON: { "headline": "...", "copy": "...", "cta": "...", "hashtags": ["
 
 Product: ${product}
 Platform: ${platform || 'General'}
-Tone: ${tone || 'Professional'}
-Target Audience: ${targetAudience || 'General audience'}
+Tone: ${tone || (brandProfile?.brand_voice || 'Professional')}
+Target Audience: ${targetAudience || (brandProfile?.target_audience || 'General audience')}
+${brandContext}
 ${platformPrompt}
 
-${outputFormat}`;
+${outputFormat}
+
+IMPORTANT: Generate ${variationsCount} DIFFERENT variations. Each should be unique with different angles, hooks, or approaches while maintaining brand consistency.
+Return as JSON array: [{ variation1 }, { variation2 }, { variation3 }]`;
 
     const completion = await openai.chat.completions.create({
       model: user?.tier === 'pro' || user?.tier === 'business' ? 'gpt-4' : 'gpt-3.5-turbo',
       messages: [
         {
           role: 'system',
-          content: 'You are an expert advertising copywriter specializing in high-converting ad copy. Create compelling, engaging ad content that drives conversions. Always return valid JSON.'
+          content: 'You are an expert advertising copywriter specializing in high-converting ad copy. Create compelling, engaging ad content that drives conversions. Always return valid JSON arrays for multiple variations.'
         },
         {
           role: 'user',
           content: prompt
         }
       ],
-      temperature: 0.8,
-      max_tokens: 500
+      temperature: 0.9, // Higher temperature for more variety
+      max_tokens: 1500 // More tokens for multiple variations
     });
 
     const response = completion.choices[0]?.message?.content;
@@ -375,54 +540,84 @@ ${outputFormat}`;
       throw new Error('No response from OpenAI');
     }
 
-    // Try to parse as JSON, fallback to structured text
-    let adContent: any;
+    // Try to parse as JSON array of variations
+    let variations: any[] = [];
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        adContent = JSON.parse(jsonMatch[0]);
+        variations = JSON.parse(jsonMatch[0]);
       } else {
-        throw new Error('No JSON found');
+        // Try single object format
+        const objMatch = response.match(/\{[\s\S]*\}/);
+        if (objMatch) {
+          variations = [JSON.parse(objMatch[0])];
+        } else {
+          throw new Error('No JSON found');
+        }
       }
     } catch (parseError) {
-      // Fallback: parse the text response
+      // Fallback: create single variation from text
       const lines = response.split('\n').filter(l => l.trim());
-      adContent = {
+      variations = [{
         headline: lines.find(l => l.includes('headline'))?.split(':')[1]?.trim() || lines[0],
         copy: lines.find(l => l.toLowerCase().includes('copy'))?.split(':')[1]?.trim() || lines[1],
         cta: lines.find(l => l.toLowerCase().includes('cta') || l.toLowerCase().includes('call'))?.split(':')[1]?.trim() || 'Learn More',
         hashtags: lines.filter(l => l.includes('#')).map(l => l.trim())
-      };
+      }];
     }
 
-    // Save ad and decrement credits for authenticated users
+    // Ensure we have at least one variation
+    if (!variations || variations.length === 0) {
+      throw new Error('Failed to generate variations');
+    }
+
+    // Save all variations and decrement credits for authenticated users
     if (user) {
-      await db.saveAd(
-        user.id,
-        product,
-        platform || 'General',
-        tone || 'Professional',
-        targetAudience || '',
-        adContent.headline,
-        adContent.copy,
-        adContent.cta,
-        Array.isArray(adContent.hashtags) ? adContent.hashtags : [],
-        user.tier === 'pro' || user.tier === 'business' ? 'gpt-4' : 'gpt-3.5-turbo'
-      );
+      const aiModel = user.tier === 'pro' || user.tier === 'business' ? 'gpt-4' : 'gpt-3.5-turbo';
+
+      for (let i = 0; i < variations.length; i++) {
+        const variation = variations[i];
+        await db.saveAd(
+          user.id,
+          product,
+          platform || 'General',
+          tone || 'Professional',
+          targetAudience || '',
+          variation.headline || variation.hook || variation.title || '',
+          variation.copy || variation.problem || (Array.isArray(variation.bullets) ? variation.bullets.join(' ') : '') || '',
+          variation.cta || 'Learn More',
+          Array.isArray(variation.hashtags) ? variation.hashtags : (Array.isArray(variation.keywords) ? variation.keywords : []),
+          aiModel,
+          brandProfileId || undefined,
+          i + 1 // variation_number
+        );
+      }
+
+      // Only decrement once for the entire set of variations
       await db.decrementAdsRemaining(user.id);
-      await db.logUsage(user.id, 'generate_ad', platform);
+      await db.logUsage(user.id, 'generate_ad_multi', platform);
 
       // Include updated ads_remaining in response
       const updatedUser = await db.getUserByFirebaseUid(req.user!.uid);
-      adContent.adsRemaining = updatedUser?.ads_remaining || 0;
+      const adsRemaining = updatedUser?.ads_remaining || 0;
+
+      return res.json({
+        variations,
+        adsRemaining,
+        count: variations.length
+      });
     }
 
-    return res.json(adContent);
+    // For non-authenticated users
+    return res.json({
+      variations,
+      count: variations.length
+    });
 
   } catch (error: any) {
-    console.error('Error generating ad:', error);
+    console.error('Error generating ad variations:', error);
     res.status(500).json({
-      error: 'Failed to generate ad',
+      error: 'Failed to generate ad variations',
       message: error.message
     });
   }

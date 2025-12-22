@@ -30,6 +30,7 @@ export default function Navigation() {
           {currentUser ? (
             <>
               <Link to="/dashboard" className="nav-link">Dashboard</Link>
+              <Link to="/brand-profiles" className="nav-link">Brand Profiles</Link>
 
               {userProfile && (
                 <div className="nav-credits">

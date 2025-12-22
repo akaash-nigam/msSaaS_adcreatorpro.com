@@ -33,21 +33,59 @@ interface AdContent {
   adsRemaining?: number;
 }
 
+interface BrandProfile {
+  id: string;
+  name: string;
+  industry?: string;
+  description?: string;
+  target_audience?: string;
+  brand_voice?: string;
+  keywords?: string[];
+  example_content?: string;
+  website_url?: string;
+  is_default: boolean;
+}
+
+interface GenerateResponse {
+  variations?: AdContent[];
+  count?: number;
+  adsRemaining?: number;
+  // Legacy single ad support
+  headline?: string;
+  copy?: string;
+  cta?: string;
+  hashtags?: string[];
+  hook?: string;
+  problem?: string;
+  solution?: string;
+  title?: string;
+  bullets?: string[];
+  description?: string;
+  keywords?: string[];
+}
+
 export default function Home() {
-  const { currentUser, userProfile, refreshUserProfile } = useAuth();
+  const { currentUser, userProfile, refreshUserProfile, getIdToken } = useAuth();
   const navigate = useNavigate();
   const [product, setProduct] = useState('');
   const [platform, setPlatform] = useState('Facebook/Instagram/Pinterest');
   const [tone, setTone] = useState('Professional');
   const [targetAudience, setTargetAudience] = useState('');
   const [loading, setLoading] = useState(false);
-  const [adContent, setAdContent] = useState<AdContent | null>(null);
+  const [adVariations, setAdVariations] = useState<AdContent[]>([]);
+  const [selectedVariation, setSelectedVariation] = useState(0);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [activeTab, setActiveTab] = useState<'generate' | 'templates'>('generate');
+  const [brandProfiles, setBrandProfiles] = useState<BrandProfile[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState<string>('');
+  const [variationsCount, setVariationsCount] = useState(3);
 
   useEffect(() => {
     fetchTemplates();
-  }, []);
+    if (currentUser) {
+      fetchBrandProfiles();
+    }
+  }, [currentUser]);
 
   const fetchTemplates = async () => {
     try {
@@ -59,6 +97,50 @@ export default function Home() {
     }
   };
 
+  const fetchBrandProfiles = async () => {
+    try {
+      const token = await getIdToken();
+      if (!token) return;
+
+      const response = await fetch('/api/brand-profiles', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const profiles = await response.json();
+        setBrandProfiles(profiles);
+
+        // Auto-select default brand if exists
+        const defaultProfile = profiles.find((p: BrandProfile) => p.is_default);
+        if (defaultProfile) {
+          setSelectedBrand(defaultProfile.id);
+          handleBrandChange(defaultProfile.id, profiles);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching brand profiles:', error);
+    }
+  };
+
+  const handleBrandChange = (brandId: string, profiles = brandProfiles) => {
+    setSelectedBrand(brandId);
+
+    if (brandId) {
+      const brand = profiles.find(p => p.id === brandId);
+      if (brand) {
+        // Auto-fill form fields from brand profile
+        if (brand.target_audience && !targetAudience) {
+          setTargetAudience(brand.target_audience);
+        }
+        if (brand.brand_voice && tone === 'Professional') {
+          setTone(brand.brand_voice);
+        }
+      }
+    }
+  };
+
   const generateAd = async () => {
     if (!product.trim()) {
       alert('Please enter a product or service description');
@@ -66,7 +148,8 @@ export default function Home() {
     }
 
     setLoading(true);
-    setAdContent(null);
+    setAdVariations([]);
+    setSelectedVariation(0);
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -77,16 +160,35 @@ export default function Home() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
+      const requestBody: any = {
+        product,
+        platform,
+        tone,
+        targetAudience,
+        variationsCount
+      };
+
+      // Add brand profile if selected
+      if (selectedBrand) {
+        requestBody.brandProfileId = selectedBrand;
+      }
+
       const response = await fetch('/api/generate-ad', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ product, platform, tone, targetAudience })
+        body: JSON.stringify(requestBody)
       });
 
-      const data = await response.json();
+      const data: GenerateResponse = await response.json();
 
       if (response.ok) {
-        setAdContent(data);
+        // Handle new multi-variation format
+        if (data.variations && Array.isArray(data.variations)) {
+          setAdVariations(data.variations);
+        } else {
+          // Legacy single ad format - convert to array
+          setAdVariations([data as AdContent]);
+        }
 
         // Refresh user profile to get updated ads_remaining
         if (currentUser) {
@@ -144,6 +246,29 @@ export default function Home() {
               {userProfile && (
                 <div className="user-credits-banner">
                   Ads remaining: <strong>{userProfile.ads_remaining === 999999 ? '∞' : userProfile.ads_remaining}</strong>
+                </div>
+              )}
+
+              {currentUser && brandProfiles.length > 0 && (
+                <div className="form-group">
+                  <label>Brand Profile (Optional)</label>
+                  <select
+                    value={selectedBrand}
+                    onChange={(e) => handleBrandChange(e.target.value)}
+                    className="input select"
+                  >
+                    <option value="">None - Generate without brand context</option>
+                    {brandProfiles.map(profile => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name} {profile.is_default ? '(Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedBrand && (
+                    <small style={{ color: '#667eea', marginTop: '0.5rem', display: 'block' }}>
+                      ✨ Using {brandProfiles.find(p => p.id === selectedBrand)?.name} brand voice
+                    </small>
+                  )}
                 </div>
               )}
 
@@ -205,50 +330,80 @@ export default function Home() {
                 />
               </div>
 
+              <div className="form-group">
+                <label>Number of Variations: {variationsCount}</label>
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  value={variationsCount}
+                  onChange={(e) => setVariationsCount(parseInt(e.target.value))}
+                  className="slider"
+                  style={{ width: '100%' }}
+                />
+                <small style={{ color: '#666', marginTop: '0.5rem', display: 'block' }}>
+                  Generate {variationsCount} different {variationsCount === 1 ? 'version' : 'versions'} with unique angles and hooks
+                </small>
+              </div>
+
               <button
                 onClick={generateAd}
                 disabled={loading}
                 className="generate-btn"
               >
-                {loading ? '✨ Generating...' : '🚀 Generate Ad'}
+                {loading ? `✨ Generating ${variationsCount} ${variationsCount === 1 ? 'Variation' : 'Variations'}...` : `🚀 Generate ${variationsCount} Ad ${variationsCount === 1 ? 'Variation' : 'Variations'}`}
               </button>
             </div>
 
-            {adContent && (
+            {adVariations.length > 0 && (
               <div className="result-container">
-                <h2>Your Generated {platform?.includes('YouTube') ? 'Video Script' : platform?.includes('Amazon') ? 'Product Listing' : 'Ad'} 🎉</h2>
+                <h2>Your Generated {platform?.includes('YouTube') ? 'Video Scripts' : platform?.includes('Amazon') ? 'Product Listings' : 'Ads'} 🎉</h2>
+
+                {adVariations.length > 1 && (
+                  <div className="variations-tabs">
+                    {adVariations.map((_, index) => (
+                      <button
+                        key={index}
+                        className={`variation-tab ${selectedVariation === index ? 'active' : ''}`}
+                        onClick={() => setSelectedVariation(index)}
+                      >
+                        Variation {index + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div className="ad-preview">
                   {/* YouTube Video Script Format */}
-                  {adContent.hook && (
+                  {adVariations[selectedVariation]?.hook && (
                     <>
                       <div className="ad-section">
                         <div className="ad-label">🎬 Hook (0-3s)</div>
-                        <div className="ad-content">{adContent.hook}</div>
-                        <button onClick={() => copyToClipboard(adContent.hook!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content">{adVariations[selectedVariation].hook}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].hook!)} className="copy-btn">📋 Copy</button>
                       </div>
 
                       <div className="ad-section">
                         <div className="ad-label">⚠️ Problem (3-8s)</div>
-                        <div className="ad-content">{adContent.problem}</div>
-                        <button onClick={() => copyToClipboard(adContent.problem!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content">{adVariations[selectedVariation].problem}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].problem!)} className="copy-btn">📋 Copy</button>
                       </div>
 
                       <div className="ad-section">
                         <div className="ad-label">✅ Solution (8-20s)</div>
-                        <div className="ad-content">{adContent.solution}</div>
-                        <button onClick={() => copyToClipboard(adContent.solution!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content">{adVariations[selectedVariation].solution}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].solution!)} className="copy-btn">📋 Copy</button>
                       </div>
 
                       <div className="ad-section">
                         <div className="ad-label">🎯 Call-to-Action (20-30s)</div>
-                        <div className="ad-content cta">{adContent.cta}</div>
-                        <button onClick={() => copyToClipboard(adContent.cta!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content cta">{adVariations[selectedVariation].cta}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].cta!)} className="copy-btn">📋 Copy</button>
                       </div>
 
                       <button
                         onClick={() => {
-                          const fullScript = `HOOK (0-3s):\n${adContent.hook}\n\nPROBLEM (3-8s):\n${adContent.problem}\n\nSOLUTION (8-20s):\n${adContent.solution}\n\nCTA (20-30s):\n${adContent.cta}`;
+                          const fullScript = `HOOK (0-3s):\n${adVariations[selectedVariation].hook}\n\nPROBLEM (3-8s):\n${adVariations[selectedVariation].problem}\n\nSOLUTION (8-20s):\n${adVariations[selectedVariation].solution}\n\nCTA (20-30s):\n${adVariations[selectedVariation].cta}`;
                           copyToClipboard(fullScript);
                         }}
                         className="copy-all-btn"
@@ -259,45 +414,45 @@ export default function Home() {
                   )}
 
                   {/* Amazon Product Listing Format */}
-                  {adContent.title && (
+                  {adVariations[selectedVariation].title && (
                     <>
                       <div className="ad-section">
                         <div className="ad-label">📦 Product Title</div>
-                        <div className="ad-content">{adContent.title}</div>
-                        <button onClick={() => copyToClipboard(adContent.title!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content">{adVariations[selectedVariation].title}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].title!)} className="copy-btn">📋 Copy</button>
                       </div>
 
-                      {adContent.bullets && adContent.bullets.length > 0 && (
+                      {adVariations[selectedVariation].bullets && adVariations[selectedVariation].bullets.length > 0 && (
                         <div className="ad-section">
                           <div className="ad-label">⭐ Key Features (Bullets)</div>
                           <div className="ad-content">
                             <ul style={{ textAlign: 'left', paddingLeft: '20px' }}>
-                              {adContent.bullets.map((bullet, idx) => (
+                              {adVariations[selectedVariation].bullets.map((bullet, idx) => (
                                 <li key={idx}>{bullet}</li>
                               ))}
                             </ul>
                           </div>
-                          <button onClick={() => copyToClipboard(adContent.bullets!.join('\n• '))} className="copy-btn">📋 Copy</button>
+                          <button onClick={() => copyToClipboard(adVariations[selectedVariation].bullets!.join('\n• '))} className="copy-btn">📋 Copy</button>
                         </div>
                       )}
 
                       <div className="ad-section">
                         <div className="ad-label">📝 Product Description</div>
-                        <div className="ad-content">{adContent.description}</div>
-                        <button onClick={() => copyToClipboard(adContent.description!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content">{adVariations[selectedVariation].description}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].description!)} className="copy-btn">📋 Copy</button>
                       </div>
 
-                      {adContent.keywords && adContent.keywords.length > 0 && (
+                      {adVariations[selectedVariation].keywords && adVariations[selectedVariation].keywords.length > 0 && (
                         <div className="ad-section">
                           <div className="ad-label">🔍 SEO Keywords</div>
-                          <div className="ad-content hashtags">{adContent.keywords.join(', ')}</div>
-                          <button onClick={() => copyToClipboard(adContent.keywords!.join(', '))} className="copy-btn">📋 Copy</button>
+                          <div className="ad-content hashtags">{adVariations[selectedVariation].keywords.join(', ')}</div>
+                          <button onClick={() => copyToClipboard(adVariations[selectedVariation].keywords!.join(', '))} className="copy-btn">📋 Copy</button>
                         </div>
                       )}
 
                       <button
                         onClick={() => {
-                          const fullListing = `TITLE:\n${adContent.title}\n\nBULLET POINTS:\n• ${adContent.bullets?.join('\n• ')}\n\nDESCRIPTION:\n${adContent.description}\n\nKEYWORDS:\n${adContent.keywords?.join(', ')}`;
+                          const fullListing = `TITLE:\n${adVariations[selectedVariation].title}\n\nBULLET POINTS:\n• ${adVariations[selectedVariation].bullets?.join('\n• ')}\n\nDESCRIPTION:\n${adVariations[selectedVariation].description}\n\nKEYWORDS:\n${adVariations[selectedVariation].keywords?.join(', ')}`;
                           copyToClipboard(fullListing);
                         }}
                         className="copy-all-btn"
@@ -308,33 +463,33 @@ export default function Home() {
                   )}
 
                   {/* Standard Social Media Ad Format */}
-                  {adContent.headline && !adContent.hook && !adContent.title && (
+                  {adVariations[selectedVariation].headline && !adVariations[selectedVariation].hook && !adVariations[selectedVariation].title && (
                     <>
                       <div className="ad-section">
                         <div className="ad-label">📌 Headline</div>
-                        <div className="ad-content">{adContent.headline}</div>
-                        <button onClick={() => copyToClipboard(adContent.headline!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content">{adVariations[selectedVariation].headline}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].headline!)} className="copy-btn">📋 Copy</button>
                       </div>
 
                       <div className="ad-section">
                         <div className="ad-label">📝 Ad Copy</div>
-                        <div className="ad-content">{adContent.copy}</div>
-                        <button onClick={() => copyToClipboard(adContent.copy!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content">{adVariations[selectedVariation].copy}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].copy!)} className="copy-btn">📋 Copy</button>
                       </div>
 
                       <div className="ad-section">
                         <div className="ad-label">🎯 Call-to-Action</div>
-                        <div className="ad-content cta">{adContent.cta}</div>
-                        <button onClick={() => copyToClipboard(adContent.cta!)} className="copy-btn">📋 Copy</button>
+                        <div className="ad-content cta">{adVariations[selectedVariation].cta}</div>
+                        <button onClick={() => copyToClipboard(adVariations[selectedVariation].cta!)} className="copy-btn">📋 Copy</button>
                       </div>
 
-                      {adContent.hashtags && adContent.hashtags.length > 0 && (
+                      {adVariations[selectedVariation].hashtags && adVariations[selectedVariation].hashtags.length > 0 && (
                         <div className="ad-section">
                           <div className="ad-label">#️⃣ Hashtags</div>
                           <div className="ad-content hashtags">
-                            {Array.isArray(adContent.hashtags) ? adContent.hashtags.join(' ') : adContent.hashtags}
+                            {Array.isArray(adVariations[selectedVariation].hashtags) ? adVariations[selectedVariation].hashtags.join(' ') : adVariations[selectedVariation].hashtags}
                           </div>
-                          <button onClick={() => copyToClipboard(Array.isArray(adContent.hashtags) ? adContent.hashtags.join(' ') : String(adContent.hashtags))} className="copy-btn">
+                          <button onClick={() => copyToClipboard(Array.isArray(adVariations[selectedVariation].hashtags) ? adVariations[selectedVariation].hashtags.join(' ') : String(adVariations[selectedVariation].hashtags))} className="copy-btn">
                             📋 Copy
                           </button>
                         </div>
@@ -342,7 +497,7 @@ export default function Home() {
 
                       <button
                         onClick={() => {
-                          const fullAd = `${adContent.headline}\n\n${adContent.copy}\n\n${adContent.cta}\n\n${Array.isArray(adContent.hashtags) ? adContent.hashtags.join(' ') : adContent.hashtags}`;
+                          const fullAd = `${adVariations[selectedVariation].headline}\n\n${adVariations[selectedVariation].copy}\n\n${adVariations[selectedVariation].cta}\n\n${Array.isArray(adVariations[selectedVariation].hashtags) ? adVariations[selectedVariation].hashtags.join(' ') : adVariations[selectedVariation].hashtags}`;
                           copyToClipboard(fullAd);
                         }}
                         className="copy-all-btn"
