@@ -264,6 +264,103 @@ export default function Pricing() {
         </div>
       </div>
 
+      {/* ROI Calculator Section */}
+      <div className="roi-section">
+        <h2>💰 See How Much You'll Save</h2>
+        <div className="roi-grid">
+          <div className="roi-card">
+            <div className="roi-icon">👨‍💼</div>
+            <h3>Hiring a Copywriter</h3>
+            <div className="roi-price">$50-150 per ad</div>
+            <p>Average cost for professional ad copy</p>
+          </div>
+          <div className="roi-arrow">→</div>
+          <div className="roi-card highlight">
+            <div className="roi-icon">🎨</div>
+            <h3>AdCreatorPro</h3>
+            <div className="roi-price">$0.30-1.99 per ad</div>
+            <p>With our Starter plan or better</p>
+          </div>
+          <div className="roi-arrow">→</div>
+          <div className="roi-card savings">
+            <div className="roi-icon">🎉</div>
+            <h3>You Save</h3>
+            <div className="roi-price">Up to 98%</div>
+            <p>More budget for actual advertising!</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Feature Comparison Table */}
+      <div className="comparison-section">
+        <h2>📊 Detailed Feature Comparison</h2>
+        <div className="comparison-table">
+          <div className="comparison-header">
+            <div className="feature-col">Features</div>
+            <div className="plan-col">Free</div>
+            <div className="plan-col">Starter</div>
+            <div className="plan-col highlight">Pro</div>
+            <div className="plan-col">Business</div>
+          </div>
+
+          <div className="comparison-row">
+            <div className="feature-col"><strong>Monthly Ads</strong></div>
+            <div className="plan-col">3</div>
+            <div className="plan-col">30</div>
+            <div className="plan-col highlight">Unlimited</div>
+            <div className="plan-col">Unlimited</div>
+          </div>
+
+          <div className="comparison-row">
+            <div className="feature-col"><strong>AI Model</strong></div>
+            <div className="plan-col">GPT-3.5</div>
+            <div className="plan-col">GPT-3.5</div>
+            <div className="plan-col highlight">GPT-4</div>
+            <div className="plan-col">GPT-4</div>
+          </div>
+
+          <div className="comparison-row">
+            <div className="feature-col"><strong>Ad Variations</strong></div>
+            <div className="plan-col">1-5</div>
+            <div className="plan-col">1-5</div>
+            <div className="plan-col highlight">1-5</div>
+            <div className="plan-col">1-5</div>
+          </div>
+
+          <div className="comparison-row">
+            <div className="feature-col"><strong>Brand Profiles</strong></div>
+            <div className="plan-col">❌</div>
+            <div className="plan-col">✅ 3</div>
+            <div className="plan-col highlight">✅ Unlimited</div>
+            <div className="plan-col">✅ Unlimited</div>
+          </div>
+
+          <div className="comparison-row">
+            <div className="feature-col"><strong>Ad History</strong></div>
+            <div className="plan-col">❌</div>
+            <div className="plan-col">✅ 90 days</div>
+            <div className="plan-col highlight">✅ Forever</div>
+            <div className="plan-col">✅ Forever</div>
+          </div>
+
+          <div className="comparison-row">
+            <div className="feature-col"><strong>Team Members</strong></div>
+            <div className="plan-col">1</div>
+            <div className="plan-col">1</div>
+            <div className="plan-col highlight">1</div>
+            <div className="plan-col">5</div>
+          </div>
+
+          <div className="comparison-row">
+            <div className="feature-col"><strong>Support</strong></div>
+            <div className="plan-col">Community</div>
+            <div className="plan-col">Email</div>
+            <div className="plan-col highlight">Priority Email</div>
+            <div className="plan-col">24h Priority</div>
+          </div>
+        </div>
+      </div>
+
       {/* Platform Coverage */}
       <div className="platform-coverage">
         <h3>🌐 All Plans Include:</h3>
