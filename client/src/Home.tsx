@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from './AuthContext';
+import { useNavigate } from 'react-router-dom';
 import './App.css';
 
 interface Template {
@@ -26,9 +28,14 @@ interface AdContent {
   bullets?: string[];
   description?: string;
   keywords?: string[];
+
+  // Added from backend
+  adsRemaining?: number;
 }
 
-function App() {
+export default function Home() {
+  const { currentUser, userProfile, refreshUserProfile } = useAuth();
+  const navigate = useNavigate();
   const [product, setProduct] = useState('');
   const [platform, setPlatform] = useState('Facebook/Instagram/Pinterest');
   const [tone, setTone] = useState('Professional');
@@ -62,9 +69,17 @@ function App() {
     setAdContent(null);
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+      // Add auth token if user is logged in
+      if (currentUser) {
+        const token = await currentUser.getIdToken();
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch('/api/generate-ad', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ product, platform, tone, targetAudience })
       });
 
@@ -72,8 +87,23 @@ function App() {
 
       if (response.ok) {
         setAdContent(data);
+
+        // Refresh user profile to get updated ads_remaining
+        if (currentUser) {
+          await refreshUserProfile();
+        }
       } else {
-        alert(data.error || 'Failed to generate ad');
+        if (response.status === 403) {
+          // Out of ads
+          alert(data.message || 'No ads remaining. Please upgrade your plan or purchase more ads.');
+          navigate('/pricing');
+        } else if (response.status === 401) {
+          // Not logged in and no free tier
+          alert('Please sign in to generate ads');
+          navigate('/login');
+        } else {
+          alert(data.error || 'Failed to generate ad');
+        }
       }
     } catch (error) {
       console.error('Error:', error);
@@ -90,11 +120,6 @@ function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <h1>🎨 AdCreatorPro</h1>
-        <p>AI-Powered Advertisement Creation</p>
-      </header>
-
       <div className="tabs">
         <button
           className={`tab ${activeTab === 'generate' ? 'active' : ''}`}
@@ -115,6 +140,12 @@ function App() {
           <div className="generate-section">
             <div className="form-container">
               <h2>Create Your Advertisement</h2>
+
+              {userProfile && (
+                <div className="user-credits-banner">
+                  Ads remaining: <strong>{userProfile.ads_remaining === 999999 ? '∞' : userProfile.ads_remaining}</strong>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Product/Service Description *</label>
@@ -359,5 +390,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
