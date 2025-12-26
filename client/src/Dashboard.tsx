@@ -19,6 +19,7 @@ export default function Dashboard() {
   const { currentUser, userProfile, refreshUserProfile } = useAuth();
   const [ads, setAds] = useState<Ad[]>([]);
   const [loading, setLoading] = useState(true);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     fetchAdHistory();
@@ -44,6 +45,37 @@ export default function Dashboard() {
       console.error('Error fetching ad history:', error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleManageSubscription() {
+    if (!currentUser) return;
+
+    try {
+      setPortalLoading(true);
+      const token = await currentUser.getIdToken();
+
+      const response = await fetch('/api/stripe/create-portal-session', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.url) {
+        // Redirect to Stripe customer portal
+        window.location.href = data.url;
+      } else {
+        alert(data.error || 'Failed to open subscription management portal');
+      }
+    } catch (error) {
+      console.error('Error opening portal:', error);
+      alert('Failed to open subscription management portal. Please try again.');
+    } finally {
+      setPortalLoading(false);
     }
   }
 
@@ -103,7 +135,18 @@ export default function Dashboard() {
 
       {/* Account Info */}
       <div className="account-section">
-        <h2>Account Information</h2>
+        <div className="section-header-with-action">
+          <h2>Account Information</h2>
+          {userProfile.tier !== 'free' && userProfile.stripe_customer_id && (
+            <button
+              onClick={handleManageSubscription}
+              disabled={portalLoading}
+              className="manage-subscription-btn"
+            >
+              {portalLoading ? '⏳ Loading...' : '⚙️ Manage Subscription'}
+            </button>
+          )}
+        </div>
         <div className="account-card">
           <div className="account-item">
             <span className="label">Email:</span>
@@ -122,7 +165,16 @@ export default function Dashboard() {
           {userProfile.subscription_status && (
             <div className="account-item">
               <span className="label">Subscription Status:</span>
-              <span className="value capitalize">{userProfile.subscription_status}</span>
+              <span className="value capitalize status-badge status-{userProfile.subscription_status}">
+                {userProfile.subscription_status}
+              </span>
+            </div>
+          )}
+          {userProfile.tier !== 'free' && (
+            <div className="subscription-info">
+              <p className="info-text">
+                💡 Use "Manage Subscription" to update your payment method, view invoices, or cancel your subscription.
+              </p>
             </div>
           )}
         </div>
