@@ -1,0 +1,12 @@
+# Allow all search engines
+User-agent: *
+Allow: /
+
+# Disallow private pages
+Disallow: /dashboard
+Disallow: /brand-profiles
+Disallow: /success
+Disallow: /cancel
+
+# Sitemap location
+Sitemap: https://adcreatorpro.com/sitemap.xml

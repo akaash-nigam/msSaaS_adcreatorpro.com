@@ -95,6 +95,19 @@ export async function getUserByFirebaseUid(firebaseUid: string): Promise<User | 
   }
 }
 
+export async function getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | null> {
+  const db = getPool();
+  if (!db) return null;
+
+  try {
+    const result = await db.query('SELECT * FROM users WHERE stripe_customer_id = $1', [stripeCustomerId]);
+    return result.rows[0] as User || null;
+  } catch (error: any) {
+    console.error('Error getting user by Stripe customer ID:', error.message);
+    return null;
+  }
+}
+
 export async function updateUserStripeInfo(
   userId: string,
   stripeCustomerId?: string,
@@ -175,6 +188,24 @@ export async function addAdsToUser(userId: string, count: number): Promise<boole
     return true;
   } catch (error: any) {
     console.error('Error adding ads:', error.message);
+    return false;
+  }
+}
+
+export async function setUserAdsRemaining(userId: string, count: number): Promise<boolean> {
+  const db = getPool();
+  if (!db) return false;
+
+  try {
+    await db.query(
+      `UPDATE users
+       SET ads_remaining = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [count, userId]
+    );
+    return true;
+  } catch (error: any) {
+    console.error('Error setting ads remaining:', error.message);
     return false;
   }
 }

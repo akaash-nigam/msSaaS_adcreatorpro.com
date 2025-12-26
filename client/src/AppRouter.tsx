@@ -7,6 +7,8 @@ import Signup from './Signup';
 import Pricing from './Pricing';
 import Dashboard from './Dashboard';
 import BrandProfiles from './BrandProfiles';
+import PaymentSuccess from './PaymentSuccess';
+import PaymentCancel from './PaymentCancel';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -32,6 +34,8 @@ function AppContent() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/pricing" element={<Pricing />} />
+        <Route path="/success" element={<PaymentSuccess />} />
+        <Route path="/cancel" element={<PaymentCancel />} />
         <Route
           path="/dashboard"
           element={

@@ -284,8 +284,8 @@ app.post('/api/stripe/create-checkout-session', authenticateUser, async (req, re
   }
 });
 
-// Create payment intent for one-time ad purchase
-app.post('/api/stripe/create-payment-intent', authenticateUser, async (req, res) => {
+// Create checkout session for one-time ad purchase
+app.post('/api/stripe/create-payment-checkout', authenticateUser, async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -298,13 +298,39 @@ app.post('/api/stripe/create-payment-intent', authenticateUser, async (req, res)
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // $1.99 per ad
-    const amount = 199 * quantity;
+    // Create or use Stripe customer
+    let customerId = user.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { userId: user.id }
+      });
+      customerId = customer.id;
+      await db.updateUserStripeInfo(user.id, customerId, null, null);
+    }
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: 'usd',
-      customer: user.stripe_customer_id || undefined,
+    // $1.99 per ad, with discount for 5+ ads
+    const pricePerAd = quantity >= 5 ? 199 : 199; // Can add discounts here
+    const amount = pricePerAd * quantity;
+
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `Ad Generation Credits`,
+              description: `${quantity} ad generation ${quantity === 1 ? 'credit' : 'credits'}`,
+            },
+            unit_amount: pricePerAd,
+          },
+          quantity: quantity,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/pricing`,
       metadata: {
         userId: user.id,
         quantity: quantity.toString(),
@@ -312,9 +338,33 @@ app.post('/api/stripe/create-payment-intent', authenticateUser, async (req, res)
       }
     });
 
-    res.json({ clientSecret: paymentIntent.client_secret });
+    res.json({ sessionId: session.id, url: session.url });
   } catch (error: any) {
-    console.error('Payment intent error:', error);
+    console.error('Payment checkout error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create customer portal session
+app.post('/api/stripe/create-portal-session', authenticateUser, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await db.getUserByFirebaseUid(req.user.uid);
+    if (!user || !user.stripe_customer_id) {
+      return res.status(404).json({ error: 'No subscription found' });
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripe_customer_id,
+      return_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard`,
+    });
+
+    res.json({ url: session.url });
+  } catch (error: any) {
+    console.error('Portal session error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -325,19 +375,28 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   if (!webhookSecret) {
+    console.warn('⚠️  Webhook secret not configured - skipping verification');
     return res.status(400).send('Webhook secret not configured');
   }
 
   try {
     const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    console.log(`✅ Webhook received: ${event.type}`);
 
     switch (event.type) {
+      // Subscription created/updated
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.userId;
         const tier = session.metadata?.tier;
+        const paymentType = session.metadata?.type;
 
-        if (userId && tier) {
+        console.log(`Processing checkout completion for user ${userId}`);
+
+        // Handle subscription checkout
+        if (userId && tier && session.mode === 'subscription') {
+          console.log(`Activating ${tier} subscription for user ${userId}`);
+
           await db.updateUserTier(userId, tier as any);
           await db.updateUserStripeInfo(
             userId,
@@ -345,34 +404,151 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
             session.subscription as string,
             'active'
           );
+
+          await db.recordPayment(
+            userId,
+            session.amount_total || 0,
+            'subscription',
+            session.id,
+            'succeeded'
+          );
         }
-        break;
-      }
 
-      case 'payment_intent.succeeded': {
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
-        const userId = paymentIntent.metadata?.userId;
-        const quantity = parseInt(paymentIntent.metadata?.quantity || '1');
+        // Handle one-time payment checkout
+        if (userId && paymentType === 'one_time_ad' && session.mode === 'payment') {
+          const quantity = parseInt(session.metadata?.quantity || '1');
+          console.log(`Adding ${quantity} ads to user ${userId}`);
 
-        if (userId) {
           await db.addAdsToUser(userId, quantity);
-          await db.recordPayment(userId, paymentIntent.amount, 'one_time', paymentIntent.id, 'succeeded');
+          await db.recordPayment(
+            userId,
+            session.amount_total || 0,
+            'one_time',
+            session.id,
+            'succeeded'
+          );
         }
         break;
       }
 
-      case 'customer.subscription.updated':
+      // Subscription updated (plan change, etc.)
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
+
+        console.log(`Subscription updated for customer ${customerId}`);
+
+        // Find user by stripe_customer_id
+        const user = await db.getUserByStripeCustomerId(customerId);
+        if (user) {
+          const status = subscription.status === 'active' ? 'active' :
+                        subscription.status === 'canceled' ? 'canceled' :
+                        subscription.status;
+
+          await db.updateUserStripeInfo(
+            user.id,
+            customerId,
+            subscription.id,
+            status
+          );
+
+          // If subscription becomes active, ensure user has correct tier
+          if (subscription.status === 'active') {
+            // Determine tier from subscription price
+            const priceId = subscription.items.data[0]?.price.id;
+            const tierMap: Record<string, string> = {
+              [process.env.STRIPE_PRICE_STARTER || 'starter']: 'starter',
+              [process.env.STRIPE_PRICE_PRO || 'pro']: 'pro',
+              [process.env.STRIPE_PRICE_BUSINESS || 'business']: 'business'
+            };
+            const tier = tierMap[priceId];
+            if (tier) {
+              await db.updateUserTier(user.id, tier as any);
+            }
+          }
+        }
+        break;
+      }
+
+      // Subscription deleted/canceled
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
-        // Update subscription status
-        // You'd need to query user by stripe_customer_id to update
+        const customerId = subscription.customer as string;
+
+        console.log(`Subscription canceled for customer ${customerId}`);
+
+        const user = await db.getUserByStripeCustomerId(customerId);
+        if (user) {
+          // Downgrade to free tier
+          await db.updateUserTier(user.id, 'free');
+          await db.updateUserStripeInfo(
+            user.id,
+            customerId,
+            subscription.id,
+            'canceled'
+          );
+        }
         break;
       }
+
+      // Invoice payment succeeded (for recurring subscriptions)
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+        const subscriptionId = invoice.subscription as string;
+
+        console.log(`Invoice paid for customer ${customerId}`);
+
+        if (subscriptionId) {
+          const user = await db.getUserByStripeCustomerId(customerId);
+          if (user) {
+            await db.recordPayment(
+              user.id,
+              invoice.amount_paid,
+              'subscription',
+              invoice.id,
+              'succeeded'
+            );
+
+            // Reset monthly ads for subscription users
+            if (user.tier === 'starter') {
+              await db.setUserAdsRemaining(user.id, 30);
+            } else if (user.tier === 'pro' || user.tier === 'business') {
+              await db.setUserAdsRemaining(user.id, 999999); // Unlimited
+            }
+          }
+        }
+        break;
+      }
+
+      // Invoice payment failed
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string;
+
+        console.log(`❌ Invoice payment failed for customer ${customerId}`);
+
+        const user = await db.getUserByStripeCustomerId(customerId);
+        if (user) {
+          await db.recordPayment(
+            user.id,
+            invoice.amount_due,
+            'subscription',
+            invoice.id,
+            'failed'
+          );
+          // Consider sending an email notification here
+        }
+        break;
+      }
+
+      default:
+        console.log(`Unhandled webhook event: ${event.type}`);
     }
 
     res.json({ received: true });
   } catch (error: any) {
-    console.error('Webhook error:', error);
+    console.error('❌ Webhook error:', error);
     res.status(400).send(`Webhook Error: ${error.message}`);
   }
 });

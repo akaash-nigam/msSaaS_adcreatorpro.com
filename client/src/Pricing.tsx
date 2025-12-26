@@ -53,7 +53,7 @@ export default function Pricing() {
       setLoading(`buy-${quantity}`);
       const token = await currentUser.getIdToken();
 
-      const response = await fetch('/api/stripe/create-payment-intent', {
+      const response = await fetch('/api/stripe/create-payment-checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -62,17 +62,17 @@ export default function Pricing() {
         body: JSON.stringify({ quantity })
       });
 
-      const { clientSecret } = await response.json();
-      const stripe = await stripePromise;
+      const { url } = await response.json();
 
-      if (stripe && clientSecret) {
-        // Redirect to Stripe checkout for one-time payment
-        alert(`Payment setup complete! Amount: $${(quantity * 1.99).toFixed(2)}`);
-        // In production, you'd use Stripe Elements for card input
+      if (url) {
+        // Redirect to Stripe checkout
+        window.location.href = url;
+      } else {
+        throw new Error('No checkout URL received');
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to process payment. Please try again.');
+      alert('Failed to start checkout. Please try again.');
     } finally {
       setLoading(null);
     }
