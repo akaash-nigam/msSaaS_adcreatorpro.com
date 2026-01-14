@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { useToast } from './components/Toast';
 import './BrandProfiles.css';
 
 interface BrandProfile {
@@ -18,6 +19,7 @@ interface BrandProfile {
 
 export default function BrandProfiles() {
   const { getIdToken } = useAuth();
+  const toast = useToast();
   const [profiles, setProfiles] = useState<BrandProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -123,11 +125,11 @@ export default function BrandProfiles() {
         fetchProfiles();
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to save brand profile');
+        toast.error(error.error || 'Failed to save brand profile');
       }
     } catch (error) {
       console.error('Error saving profile:', error);
-      alert('Failed to save brand profile');
+      toast.error('Failed to save brand profile');
     }
   }
 
@@ -148,7 +150,7 @@ export default function BrandProfiles() {
       if (response.ok) {
         fetchProfiles();
       } else {
-        alert('Failed to delete brand profile');
+        toast.error('Failed to delete brand profile');
       }
     } catch (error) {
       console.error('Error deleting profile:', error);

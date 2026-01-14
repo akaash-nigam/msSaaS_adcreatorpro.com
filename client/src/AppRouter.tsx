@@ -1,9 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
+import { ToastProvider } from './components/Toast';
 import Navigation from './Navigation';
 import Home from './Home';
 import Login from './Login';
 import Signup from './Signup';
+import ResetPassword from './ResetPassword';
+import VerifyEmail from './VerifyEmail';
 import Pricing from './Pricing';
 import Dashboard from './Dashboard';
 import BrandProfiles from './BrandProfiles';
@@ -33,6 +36,8 @@ function AppContent() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/success" element={<PaymentSuccess />} />
         <Route path="/cancel" element={<PaymentCancel />} />
@@ -62,7 +67,9 @@ export default function AppRouter() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppContent />
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

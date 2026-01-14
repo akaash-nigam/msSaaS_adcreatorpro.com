@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
+import { useToast } from './components/Toast';
 import './Pricing.css';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder');
@@ -9,6 +10,7 @@ const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 
 export default function Pricing() {
   const { currentUser, userProfile } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [loading, setLoading] = useState<string | null>(null);
 
   async function handleSubscribe(tier: string) {
@@ -37,7 +39,7 @@ export default function Pricing() {
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to start checkout. Please try again.');
+      toast.error('Failed to start checkout. Please try again.');
     } finally {
       setLoading(null);
     }
@@ -72,7 +74,7 @@ export default function Pricing() {
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to start checkout. Please try again.');
+      toast.error('Failed to start checkout. Please try again.');
     } finally {
       setLoading(null);
     }

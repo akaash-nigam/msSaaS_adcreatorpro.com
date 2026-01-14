@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import { sendEmailVerification } from 'firebase/auth';
+import { auth } from './firebase';
 import './Auth.css';
 
 export default function Signup() {
@@ -35,7 +37,21 @@ export default function Signup() {
       setError('');
       setLoading(true);
       await signup(email, password, displayName);
-      navigate('/');
+
+      // Send email verification
+      const user = auth.currentUser;
+      if (user && !user.emailVerified) {
+        try {
+          await sendEmailVerification(user);
+          navigate('/verify-email');
+        } catch (verifyError) {
+          // If verification email fails, still let user proceed
+          console.error('Failed to send verification email:', verifyError);
+          navigate('/');
+        }
+      } else {
+        navigate('/');
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
     } finally {

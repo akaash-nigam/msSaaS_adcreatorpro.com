@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from './components/Toast';
 import './App.css';
 
 interface Template {
@@ -67,6 +68,7 @@ interface GenerateResponse {
 export default function Home() {
   const { currentUser, userProfile, refreshUserProfile, getIdToken } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [product, setProduct] = useState('');
   const [platform, setPlatform] = useState('Facebook/Instagram/Pinterest');
   const [tone, setTone] = useState('Professional');
@@ -143,7 +145,7 @@ export default function Home() {
 
   const generateAd = async () => {
     if (!product.trim()) {
-      alert('Please enter a product or service description');
+      toast.warning('Please enter a product or service description');
       return;
     }
 
@@ -197,19 +199,19 @@ export default function Home() {
       } else {
         if (response.status === 403) {
           // Out of ads
-          alert(data.message || 'No ads remaining. Please upgrade your plan or purchase more ads.');
+          toast.error(data.message || 'No ads remaining. Please upgrade your plan or purchase more ads.');
           navigate('/pricing');
         } else if (response.status === 401) {
           // Not logged in and no free tier
-          alert('Please sign in to generate ads');
+          toast.info('Please sign in to generate ads');
           navigate('/login');
         } else {
-          alert(data.error || 'Failed to generate ad');
+          toast.error(data.error || 'Failed to generate ad');
         }
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to generate ad. Please try again.');
+      toast.error('Failed to generate ad. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -217,7 +219,50 @@ export default function Home() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    alert('Copied to clipboard!');
+    toast.success('Copied to clipboard!');
+  };
+
+  const copyAllVariations = () => {
+    if (adVariations.length === 0) return;
+
+    const formattedVariations = adVariations.map((variation, index) => {
+      let text = `Variation ${index + 1}:\n\n`;
+
+      // Format based on the type of ad
+      if (variation.headline) {
+        // Standard social media ad format
+        text += `Headline: ${variation.headline}\n`;
+        text += `Copy: ${variation.copy || ''}\n`;
+        text += `CTA: ${variation.cta || ''}\n`;
+        if (variation.hashtags && variation.hashtags.length > 0) {
+          text += `Hashtags: ${variation.hashtags.join(' ')}\n`;
+        }
+      } else if (variation.hook) {
+        // YouTube video script format
+        text += `Hook: ${variation.hook}\n`;
+        text += `Problem: ${variation.problem || ''}\n`;
+        text += `Solution: ${variation.solution || ''}\n`;
+        text += `CTA: ${variation.cta || ''}\n`;
+      } else if (variation.title) {
+        // Amazon product listing format
+        text += `Title: ${variation.title}\n`;
+        if (variation.bullets && variation.bullets.length > 0) {
+          text += `\nBullet Points:\n`;
+          variation.bullets.forEach((bullet, i) => {
+            text += `${i + 1}. ${bullet}\n`;
+          });
+        }
+        text += `\nDescription: ${variation.description || ''}\n`;
+        if (variation.keywords && variation.keywords.length > 0) {
+          text += `Keywords: ${variation.keywords.join(', ')}\n`;
+        }
+      }
+
+      return text;
+    }).join('\n---\n\n');
+
+    navigator.clipboard.writeText(formattedVariations);
+    toast.success(`All ${adVariations.length} variations copied to clipboard!`);
   };
 
   return (
@@ -536,6 +581,40 @@ export default function Home() {
                       </button>
                     ))}
                   </div>
+                )}
+
+                {adVariations.length > 1 && (
+                  <button
+                    onClick={copyAllVariations}
+                    className="copy-all-btn"
+                    style={{
+                      marginTop: '1rem',
+                      padding: '12px 24px',
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)',
+                      transition: 'all 0.2s',
+                      width: '100%',
+                      maxWidth: '300px',
+                      margin: '1rem auto',
+                      display: 'block'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.3)';
+                    }}
+                  >
+                    📋 Copy All {adVariations.length} Variations
+                  </button>
                 )}
 
                 <div className="ad-preview">
